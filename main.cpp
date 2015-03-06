@@ -42,6 +42,7 @@ using namespace std;
  * argv[1] video
  * argv[2] event file
  * argv[3] starting number (optional)
+ * argv[4] sync image
  */
 int main(int argc, char** argv) {
 
@@ -81,7 +82,23 @@ int main(int argc, char** argv) {
     string line, header;
     getline(inputEvent, header);
     getline(inputEvent, line);
+    cv::Mat syncImg = cv::imread(argv[4], 1);
+    double syncTimestamp;
+    bool sync = false;
     while (inputVideo.read(frame)) {
+        if (!sync) {
+            cv::Mat diff;
+            cv::absdiff(syncImg, frame, diff);
+            vector<cv::Mat> channels(3);
+            cv::split(diff, channels);
+            if (cv::countNonZero(channels[0]) == 0 && cv::countNonZero(channels[1]) == 0
+                    && cv::countNonZero(channels[2]) == 0) {
+                syncTimestamp = inputVideo.get(CV_CAP_PROP_POS_MSEC);
+                sync = true;
+            } else
+                cout << "Sync not found\n";
+        }
+        if (!sync) continue;
         tags = detector.find(frame, chilitags::Chilitags::DETECT_ONLY);
         if (tags.count(START_TAG) > 0) {
             start_detected = true;
@@ -96,7 +113,7 @@ int main(int argc, char** argv) {
             videoOutput.open(name, CV_FOURCC('P', 'I', 'M', '1'), inputVideo.get(CV_CAP_PROP_FPS),
                     cv::Size(inputVideo.get(CV_CAP_PROP_FRAME_WIDTH), inputVideo.get(CV_CAP_PROP_FRAME_HEIGHT)),
                     true);
-            
+
             videoOutput << frame;
 
         } else if (tags.count(STOP_TAG) > 0 && start_detected) {
@@ -120,12 +137,12 @@ int main(int argc, char** argv) {
                 if (start > stopTime) {
                     outputEvent.close();
                     break;
-                } else if (start >= startTime) {
+                } else if (start + syncTimestamp >= startTime) {
                     for (int i = 0; i < fields.size() - 1; i++) {
                         if (i != 0)
                             outputEvent << ",";
                         if (i == FIX_FILE_STARTCOL || i == FIX_FILE_STOPCOL) {
-                            long newvalue = boost::lexical_cast<long>(fields[i]) - startTime + 1000/inputVideo.get(CV_CAP_PROP_FPS) ;
+                            long newvalue = boost::lexical_cast<long>(fields[i]) + syncTimestamp - startTime + 1000 / inputVideo.get(CV_CAP_PROP_FPS);
                             outputEvent << boost::lexical_cast<std::string>(newvalue);
                         } else
                             outputEvent << fields[i];
