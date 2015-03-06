@@ -37,6 +37,7 @@ using namespace std;
  * 
  * Use wmv3, since xvid doesn't carry framerate info.    
  * 
+ * Call currentTime = inputVideo.get(CV_CAP_PROP_POS_MSEC) before getting the frame
  * 
  * 
  * argv[1] video
@@ -82,30 +83,17 @@ int main(int argc, char** argv) {
     string line, header;
     getline(inputEvent, header);
     getline(inputEvent, line);
-    cv::Mat syncImg = cv::imread(argv[4], 1);
-    double syncTimestamp;
-    bool sync = false;
+    
+    double currentFrame=inputVideo.get(CV_CAP_PROP_POS_MSEC);
     while (inputVideo.read(frame)) {
-        if (!sync) {
-            cv::Mat diff;
-            cv::absdiff(syncImg, frame, diff);
-            vector<cv::Mat> channels(3);
-            cv::split(diff, channels);
-            if (cv::countNonZero(channels[0]) == 0 && cv::countNonZero(channels[1]) == 0
-                    && cv::countNonZero(channels[2]) == 0) {
-                syncTimestamp = inputVideo.get(CV_CAP_PROP_POS_MSEC);
-                sync = true;
-            } else
-                cout << "Sync not found\n";
-        }
-        if (!sync) continue;
+        //cout<<currentFrame<<"\n";
         tags = detector.find(frame, chilitags::Chilitags::DETECT_ONLY);
         if (tags.count(START_TAG) > 0) {
             start_detected = true;
             //open video writer
             if (videoOutput.isOpened())
                 videoOutput.release();
-            startTime = inputVideo.get(CV_CAP_PROP_POS_MSEC);
+            startTime = currentFrame;
             //cout<<"Start Time"<<startTime<<"\n";
             string name = argv[1];
             name = "Trial_" + boost::lexical_cast<string>(currentTrial) + "_" + name;
@@ -122,7 +110,7 @@ int main(int argc, char** argv) {
             //close video
             videoOutput.release();
             //write event file
-            long stopTime = (long) inputVideo.get(CV_CAP_PROP_POS_MSEC);
+            long stopTime = (long) currentFrame;
             //cout<<"Stop Time"<<stopTime<<"\n";
             timestampFile << currentTrial << "," << startTime << "," << stopTime << "\n";
             string name = argv[2];
@@ -134,15 +122,15 @@ int main(int argc, char** argv) {
                 vector <std::string> fields;
                 boost::split(fields, line, boost::is_any_of(","));
                 double start = boost::lexical_cast<long>(fields[FIX_FILE_STARTCOL]);
-                if (start > stopTime) {
+                if (start  > stopTime) {
                     outputEvent.close();
                     break;
-                } else if (start + syncTimestamp >= startTime) {
+                } else if (start  >= startTime) {
                     for (int i = 0; i < fields.size() - 1; i++) {
                         if (i != 0)
                             outputEvent << ",";
                         if (i == FIX_FILE_STARTCOL || i == FIX_FILE_STOPCOL) {
-                            long newvalue = boost::lexical_cast<long>(fields[i]) + syncTimestamp - startTime + 1000 / inputVideo.get(CV_CAP_PROP_FPS);
+                            long newvalue = boost::lexical_cast<long>(fields[i]) - startTime;
                             outputEvent << boost::lexical_cast<std::string>(newvalue);
                         } else
                             outputEvent << fields[i];
@@ -155,6 +143,7 @@ int main(int argc, char** argv) {
         } else if (start_detected) {
             videoOutput << frame;
         }
+        currentFrame=inputVideo.get(CV_CAP_PROP_POS_MSEC);
     }
 
     inputVideo.release();
