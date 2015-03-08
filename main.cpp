@@ -35,7 +35,7 @@ using namespace std;
  * The raw video file has approximately 1 sec delay with the fixation file.
  * Hence, first you need to export the videos from begaze.
  * 
- * Use wmv3, since xvid doesn't carry framerate info.    
+ * Use wmv3, since xvid doesn't carry framerate info. Or set the FPS manually   
  * 
  * Call currentTime = inputVideo.get(CV_CAP_PROP_POS_MSEC) before getting the frame
  * 
@@ -83,10 +83,27 @@ int main(int argc, char** argv) {
     string line, header;
     getline(inputEvent, header);
     getline(inputEvent, line);
-    
-    double currentFrame=inputVideo.get(CV_CAP_PROP_POS_MSEC);
+    bool invalid_fps = false;
+    if (inputVideo.get(CV_CAP_PROP_FPS) != 25) {
+
+        cout << "Manually defined FPS\n";
+        invalid_fps = true;
+    }
+
+    double currentFrame;
+    double fps;
+    if (!invalid_fps) {
+        currentFrame = inputVideo.get(CV_CAP_PROP_POS_MSEC);
+        fps = inputVideo.get(CV_CAP_PROP_FPS);
+    } else {
+        fps = 25.0;
+        currentFrame = 0;
+    }
+    double width=inputVideo.get(CV_CAP_PROP_FRAME_WIDTH);
+    double height=inputVideo.get(CV_CAP_PROP_FRAME_HEIGHT);
+    cout<<width<<"x"<<height<<"\n";
     while (inputVideo.read(frame)) {
-        //cout<<currentFrame<<"\n";
+        //cout << currentFrame << "\n";
         tags = detector.find(frame, chilitags::Chilitags::DETECT_ONLY);
         if (tags.count(START_TAG) > 0) {
             start_detected = true;
@@ -98,8 +115,10 @@ int main(int argc, char** argv) {
             string name = argv[1];
             name = "Trial_" + boost::lexical_cast<string>(currentTrial) + "_" + name;
 
-            videoOutput.open(name, CV_FOURCC('P', 'I', 'M', '1'), inputVideo.get(CV_CAP_PROP_FPS),
-                    cv::Size(inputVideo.get(CV_CAP_PROP_FRAME_WIDTH), inputVideo.get(CV_CAP_PROP_FRAME_HEIGHT)),
+
+
+            videoOutput.open(name, CV_FOURCC('P', 'I', 'M', '1'), fps,
+                    cv::Size(width, height),
                     true);
 
             videoOutput << frame;
@@ -122,10 +141,10 @@ int main(int argc, char** argv) {
                 vector <std::string> fields;
                 boost::split(fields, line, boost::is_any_of(","));
                 double start = boost::lexical_cast<long>(fields[FIX_FILE_STARTCOL]);
-                if (start  > stopTime) {
+                if (start > stopTime) {
                     outputEvent.close();
                     break;
-                } else if (start  >= startTime) {
+                } else if (start >= startTime) {
                     for (int i = 0; i < fields.size() - 1; i++) {
                         if (i != 0)
                             outputEvent << ",";
@@ -143,7 +162,10 @@ int main(int argc, char** argv) {
         } else if (start_detected) {
             videoOutput << frame;
         }
-        currentFrame=inputVideo.get(CV_CAP_PROP_POS_MSEC);
+        if (!invalid_fps)
+            currentFrame = inputVideo.get(CV_CAP_PROP_POS_MSEC);
+        else
+            currentFrame += 40;
     }
 
     inputVideo.release();
